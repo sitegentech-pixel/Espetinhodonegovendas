@@ -776,7 +776,7 @@ export default function App() {
                   className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#B9212E] focus:border-transparent ${
                     phoneError ? "border-red-500 bg-red-50" : "border-gray-300"
                   }`}
-                  placeholder="(83) 99999-9999"
+                  placeholder="(83) 99824-9115"
                 />
                 {phoneError && (
                   <p className="text-red-500 text-xs mt-1">
