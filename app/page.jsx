@@ -637,7 +637,7 @@ export default function App() {
       }
 
       const encodedMessage = encodeURIComponent(message)
-      const whatsappUrl = `https://wa.me/5583999999999?text=${encodedMessage}`
+      const whatsappUrl = `https://wa.me/5583998249115?text=${encodedMessage}`
       window.open(whatsappUrl, "_blank")
     }
 
