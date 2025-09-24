@@ -2,128 +2,80 @@
 
 import { createClient } from "@supabase/supabase-js"
 
-const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
-
 export async function addProductAction(formData) {
+  const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  })
+
   try {
-    console.log("[v0] Server Action: Starting product creation")
+    console.log("[v0] Server Action started")
 
-    if (!supabaseAdmin) {
-      throw new Error("Supabase admin client not configured")
-    }
-
-    // Extract form data
     const name = formData.get("name")
     const price = formData.get("price")
     const description = formData.get("description")
     const categoryId = formData.get("categoryId")
     const imageFile = formData.get("image")
 
-    console.log("[v0] Server Action: Form data extracted", { name, price, categoryId, hasImage: !!imageFile })
+    console.log("[v0] Form data extracted:", { name, price, description, categoryId, imageFileName: imageFile?.name })
 
-    let imageUrl = "https://placehold.co/300x300/EAD5B7/333?text=Produto"
-
-    // Handle image upload if file exists
-    if (imageFile && imageFile.size > 0) {
-      try {
-        const fileExt = imageFile.name.split(".").pop()
-        const fileName = `product-image-${Date.now()}.${fileExt}`
-
-        console.log("[v0] Server Action: Uploading image", fileName)
-
-        // Convert File to ArrayBuffer for server-side upload
-        const arrayBuffer = await imageFile.arrayBuffer()
-        const buffer = new Uint8Array(arrayBuffer)
-
-        const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
-          .from("product-images")
-          .upload(fileName, buffer, {
-            contentType: imageFile.type,
-            upsert: false,
-          })
-
-        if (uploadError) {
-          console.error("[v0] Server Action: Image upload failed", uploadError)
-          if (uploadError.message.includes("Bucket not found")) {
-            console.log("[v0] Server Action: Using placeholder image due to missing bucket")
-          } else {
-            throw uploadError
-          }
-        } else {
-          // Get public URL
-          const {
-            data: { publicUrl },
-          } = supabaseAdmin.storage.from("product-images").getPublicUrl(fileName)
-
-          imageUrl = publicUrl
-          console.log("[v0] Server Action: Image uploaded successfully", imageUrl)
-        }
-      } catch (uploadErr) {
-        console.error("[v0] Server Action: Image upload exception", uploadErr)
-        // Continue with placeholder image
-      }
+    if (!name || !categoryId || !imageFile || imageFile.size === 0) {
+      throw new Error("Nome, categoria e imagem são obrigatórios.")
     }
 
-    // Insert product into database
+    const fileName = `${Date.now()}-${imageFile.name}`
+    console.log("[v0] Uploading image:", fileName)
+
+    let uploadResult
+    try {
+      uploadResult = await supabaseAdmin.storage.from("product-images").upload(fileName, imageFile)
+    } catch (uploadError) {
+      console.log("[v0] Upload network error:", uploadError)
+      // Handle network or parsing errors
+      throw new Error(`Erro no upload da imagem: ${uploadError.message || "Erro de conexão"}`)
+    }
+
+    const { data: uploadData, error: uploadError } = uploadResult
+
+    if (uploadError) {
+      console.log("[v0] Upload error:", uploadError)
+      // Handle Supabase-specific errors
+      if (uploadError.message?.includes("Too Many")) {
+        throw new Error("Muitas requisições. Tente novamente em alguns segundos.")
+      }
+      throw new Error(`Erro no upload: ${uploadError.message || "Erro desconhecido"}`)
+    }
+
+    console.log("[v0] Image uploaded successfully:", uploadData.path)
+
+    const { data: publicUrlData } = supabaseAdmin.storage.from("product-images").getPublicUrl(uploadData.path)
+
+    const imageUrl = publicUrlData.publicUrl
+    console.log("[v0] Public URL generated:", imageUrl)
+
     const productData = {
-      name: name,
+      name,
+      description,
       price: price ? Number.parseFloat(price) : null,
-      description: description || "",
       category_id: categoryId,
       image_url: imageUrl,
-      is_available: true,
     }
 
-    console.log("[v0] Server Action: Inserting product", productData)
+    console.log("[v0] Inserting product:", productData)
 
-    const { data: product, error: insertError } = await supabaseAdmin
-      .from("products")
-      .insert([productData])
-      .select()
-      .single()
+    const { error: insertError } = await supabaseAdmin.from("products").insert([productData])
 
     if (insertError) {
-      console.error("[v0] Server Action: Product insert failed", insertError)
+      console.log("[v0] Insert error:", insertError)
       throw insertError
     }
 
-    console.log("[v0] Server Action: Product created successfully", product)
-    return { success: true, data: product }
+    console.log("[v0] Product inserted successfully!")
+    return { success: true }
   } catch (error) {
-    console.error("[v0] Server Action: Error in addProductAction", error)
-    return { success: false, error: error.message }
-  }
-}
-
-export async function uploadImageToStorage(imageFile, fileName) {
-  try {
-    console.log("[v0] Server action: Uploading image to storage", fileName)
-
-    // Convert File to ArrayBuffer for server-side upload
-    const arrayBuffer = await imageFile.arrayBuffer()
-    const buffer = new Uint8Array(arrayBuffer)
-
-    const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
-      .from("product-images")
-      .upload(fileName, buffer, {
-        contentType: imageFile.type,
-        upsert: false,
-      })
-
-    if (uploadError) {
-      console.error("[v0] Server action: Upload error", uploadError)
-      throw new Error(`Upload error: ${uploadError.message}`)
-    }
-
-    // Get public URL
-    const {
-      data: { publicUrl },
-    } = supabaseAdmin.storage.from("product-images").getPublicUrl(fileName)
-
-    console.log("[v0] Server action: Image uploaded successfully", publicUrl)
-    return { success: true, url: publicUrl }
-  } catch (error) {
-    console.error("[v0] Server action: Upload failed", error)
+    console.error("Erro na Server Action:", error.message)
     return { success: false, error: error.message }
   }
 }
